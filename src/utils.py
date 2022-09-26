@@ -2,6 +2,7 @@ from genericpath import isfile
 import pandas as pd
 
 from json import loads
+from os import getcwd, listdir
 from os.path import isfile
 
 #from frozendict import frozendict
@@ -31,6 +32,9 @@ def read_json(file_path):
 def read_csv_to_df(file_path):
     return pd.read_csv(file_path)
 
+def check_if_file(file_path):
+    return isfile(file_path)
+
 def write_df_to_path(df,file_path):
     if isfile(file_path):
         resp = input("{} already exists. Do you want to overwrite? (y/n)".format(file_path))
@@ -38,3 +42,9 @@ def write_df_to_path(df,file_path):
             return
     print("Writing {} to file sytsem.".format(file_path))
     df.to_csv(file_path, index=False)
+
+def return_path_to(file_path):
+    return "".join([getcwd(),file_path])
+
+def get_all_files(file_path):
+    return listdir(file_path)

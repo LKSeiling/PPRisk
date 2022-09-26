@@ -1,5 +1,6 @@
 from cgitb import text
 import re
+from time import sleep
 import requests
 import fasttext
 import pandas as pd
@@ -86,6 +87,9 @@ class GeneralTextProcessor:
             return(i1,i1)
 
     def guess_language(self, inpt) -> tuple:
+        # if more than one line, concat to one line
+        if "\n" in inpt:
+            inpt = "".join(inpt.split("\n"))
         label,est = self.ft_model.predict(inpt)
         lang = label[0].split("__")[2]
         prec_f = est[0]
@@ -104,13 +108,33 @@ class DataRetriever:
             resp = requests.get(url, headers=headers, cookies=cookies)
         return BeautifulSoup(resp.content, 'html.parser')
 
-    def get_source_soup(self, source_url):
+    def get_source_soup(self, source_url, cookie_close=False):
         driver = Firefox()
-        driver.get(source_url)
-        source_soup = BeautifulSoup(driver.page_source, 'html.parser')
-        driver.close()
-        driver.quit()
-        return source_soup
+        try:
+            driver.get(source_url)
+            if cookie_close:
+                sleep(2)
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "accept")]')
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "allow")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "agree")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "enable")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "got it")]') 
+                sleep(2)
+            source_soup = BeautifulSoup(driver.page_source, 'html.parser')
+            driver.close()
+            driver.quit()
+            return source_soup
+        except:
+            driver.close()
+            driver.quit()
+            return False
+        
+    def find_and_click(self, driver, xpath):
+        try:
+            element = driver.find_element(By.XPATH,xpath)
+            element.click()
+        except Exception as e:
+            pass
 
     def str_to_file(self, input_str, filepath):
         with open(filepath, "w") as f:

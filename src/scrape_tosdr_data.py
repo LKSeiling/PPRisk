@@ -1,10 +1,9 @@
 import imp
 from dr_tosdr import ToSDR_Retriever
-from os import getcwd
-from utils import write_df_to_path, read_csv_to_df
+from utils import write_df_to_path, read_csv_to_df, return_path_to
 from config import cookies, headers
 
-path_all = "".join([getcwd(),"/data/saved/tosdr/"])
+path_all = return_path_to("/data/saved/tosdr/")
 dr_tosdr = ToSDR_Retriever()
 
 print("#### RETRIEVING: Terms of Service; Did Not Read ####")

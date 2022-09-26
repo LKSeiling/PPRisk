@@ -1,22 +1,24 @@
 from dr_privspy import PrivSpy_Retriever
-from os import getcwd
-import pandas as pd
-from tqdm import tqdm
-
-path_all = "".join([getcwd(),"/data/saved/privacyspy/privspy_all_points.csv"])
-all_dfs = pd.read_csv(path_all, sep="\t")
-
-sources = list(all_dfs.sources.unique())
-all_sources = []
-for elem in sources:
-    split_elem = elem.split(", ")
-    if len(split_elem) == 1:
-        all_sources.append(split_elem[0])
-    else:
-        for sub_elem in split_elem:
-            all_sources.append(sub_elem)
-
-all_sources = ["".join(["https://www.",source]) if "http" not in source else source for source in all_sources]
+from utils import return_path_to, write_df_to_path, read_csv_to_df
 
 dr_privspy = PrivSpy_Retriever()
-dr_privspy.scrape_sources(all_sources)
+
+path_source = return_path_to("/data/sources/privacyspy/products/")
+path_storage = return_path_to("/data/saved/privacyspy/")
+
+# get all "points" (labelled segments)  based on Privacyspy Repo
+# df_points = dr_privspy.extract_point_info_from_products(path_source)
+# write_df_to_path(df_points,"".join([path_storage,"privspy_points.csv"]))
+
+
+df_points = read_csv_to_df("".join([path_storage,"privspy_points.csv"]))
+
+sources = list(df_points.sources.unique())
+all_sources = dr_privspy.split_sources(sources)
+while True:
+    try:
+        df_docs = dr_privspy.scrape_source_docs(all_sources)
+        break
+    except:
+        pass
+
