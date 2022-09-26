@@ -58,17 +58,30 @@ def test_clean_split3():
     res_str = ["last updated: january 31, 2022"]
     assert gtp.split_into_clean_sentences(test_str) == res_str
 
+def test_check_text_empty():
+    test_input = ["<br> <br>", "    ", "<br>Test<br>", "<a> </a>", "<a>{~[~&%</a>", "<a>Test2</a>"]
+    res = [True, True, False, True, True, False]
+    assert [gtp.check_if_text_empty(test) for test in test_input] == res
+
 def test_return_index():
     total_str = '<strong> Privacy Policy </strong> <br> <br> <strong> Effective: January 1, 2015 </strong> <br> <br> At the Atlantic Monthly Group, Inc. ("The Atlantic"), we want you to enjoy and benefit from our websites and online services secure in the knowledge that we have implemented fair information practices designed to protect your privacy. Our privacy policy is applicable to The Atlantic, and The Atlantics affiliates and subsidiaries whose websites, mobile applications and other online services are directly linked (the Sites). The privacy policy describes the kinds of information we may gather during your visit to these Sites, how we use your information, when we might disclose your personally identifiable information, and how you can manage your information. <br> <br>'
     sub_str = '<strong> Privacy Policy </strong> <br> <br> <strong> Effective: January 1, 2015 </strong> <br> <br> At the Atlantic Monthly Group, Inc. ("The Atlantic"), we want you to enjoy and benefit from our websites and online services secure in the knowledge that we have implemented fair information practices designed to protect your privacy.'
     res = (0,334)
     assert gtp.return_substr_location(sub_str, total_str) == res
 
-def test_return_all_indeces():
+def test_return_indeces():
+    total_str = 'This is a test sentence'
+    sub_strs = ['Th', 's ', 'test', 'ten']
+    res = [(0,2), (3,5), (10,14), (18,21)]
+    assert [gtp.return_substr_location(sub_str, total_str) for sub_str in sub_strs] == res
+
+def test_return_indeces_applied():
     total_str = '<strong> Privacy Policy </strong> <br> <br> <strong> Effective: January 1, 2015 </strong> <br> <br> At the Atlantic Monthly Group, Inc. ("The Atlantic"), we want you to enjoy and benefit from our websites and online services secure in the knowledge that we have implemented fair information practices designed to protect your privacy. Our privacy policy is applicable to The Atlantic, and The Atlantics affiliates and subsidiaries whose websites, mobile applications and other online services are directly linked (the Sites). The privacy policy describes the kinds of information we may gather during your visit to these Sites, how we use your information, when we might disclose your personally identifiable information, and how you can manage your information.'
     sub_strs = ['<strong> Privacy Policy </strong> <br> <br> <strong> Effective: January 1, 2015 </strong> <br> <br> At the Atlantic Monthly Group, Inc. ("The Atlantic"), we want you to enjoy and benefit from our websites and online services secure in the knowledge that we have implemented fair information practices designed to protect your privacy.','Our privacy policy is applicable to The Atlantic, and The Atlantics affiliates and subsidiaries whose websites, mobile applications and other online services are directly linked (the Sites).', 'The privacy policy describes the kinds of information we may gather during your visit to these Sites, how we use your information, when we might disclose your personally identifiable information, and how you can manage your information.']
     res = [(0,334), (335,525), (526,762)]
     assert [gtp.return_substr_location(sub_str, total_str) for sub_str in sub_strs] == res
 
-def test_clean_df():
-    input_df = 
+def test_html_escape():
+    test_str = "&lt;a href=&quot;somewhere.com&quot;&gt;This is a link to somewhere&lt;/a&gt;"
+    res = '<a href="somewhere.com">This is a link to somewhere</a>'
+    assert gtp.html_unescape(test_str) == res

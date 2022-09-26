@@ -85,7 +85,7 @@ class ToSDR_Retriever(DataRetriever):
 ## SCRAPER
     def case_dict_from_tag(self,tag,topic_id) -> dict:
         case_url = "".join(['https://edit.tosdr.org',tag.get('href')])
-        res_dict = {'case_id': self.get_tag_content(tag),'case_title': tag.contents[0],'topic':topic_id, 'case_url':case_url}
+        res_dict = {'case_id': self.get_tag_content(tag),'case_title': tag.contents[0],'topic_id':topic_id, 'case_url':case_url}
         return res_dict
     
     def get_cases_from_topic_tag(self, topic_tag) -> list:
@@ -134,11 +134,14 @@ class ToSDR_Retriever(DataRetriever):
 
     def scrape_all_cases(self,topic_ids):
         for idx1, topic_id in tqdm(enumerate(topic_ids), total=len(topic_ids)):
-            topic_soup = self.response_to_soup("https://edit.tosdr.org/topics/{topic_id}")
+            topic_soup = self.response_to_soup("https://edit.tosdr.org/topics/{topic_id}".format(topic_id=topic_id))
             case_tag_list = topic_soup.find_all('a',title="View points connected to this case")
 
             for idx2, case_tag in tqdm(enumerate(case_tag_list), total=len(case_tag_list),leave=False):
-                case_dict = self.scrape_case_info(case_tag, topic_id)
+                try:
+                    case_dict = self.scrape_case_info(case_tag, topic_id)
+                except:
+                    print("Issues with case {}. Please check manually at https://edit.tosdr.org/topics/{}".format(self.get_tag_content(case_tag),self.get_tag_content(case_tag)))
                 df = pd.DataFrame([case_dict])
                 if idx1 == 0 and idx2 == 0:
                     df_res = deepcopy(df)
@@ -181,18 +184,22 @@ class ToSDR_Retriever(DataRetriever):
 
 
     def scrape_point_info(self,point_tag, case_id):
-        res_dict = self.point_dict_from_tag(point_tag)
+        res_dict = self.point_dict_from_tag(point_tag, case_id)
 
         point_soup = self.response_to_soup(res_dict['point_url'])
-        res_dict = self.add_point_info(res_dict,point_soup)
-        res_dict = self.add_point_content(res_dict,point_soup)
+        try:
+            res_dict = self.add_point_info(res_dict,point_soup)
+            res_dict = self.add_point_content(res_dict,point_soup)
+        except:
+            print("Issues with point {}. Please check manually at https://edit.tosdr.org/points/{}".format(self.get_tag_content(point_tag),self.get_tag_content(point_tag)))
+        
         return res_dict
 
 
-# ZWISCHENSPEICHER EINBAUEN
-    def scrape_all_points(self,case_ids=None):
-        if not case_ids and os.path.isfile("./data_rel/tosdr_all_points.csv"):
-            df_res = pd.read_csv("./data_rel/tosdr_all_points.csv")
+    def scrape_all_points(self,case_ids):
+        points_path = "".join([os.getcwd(), "/data/saved/tosdr/tosdr_points.csv"])
+        if os.path.isfile(points_path):
+            df_res = pd.read_csv(points_path)
             case_id_list = [case for case in case_ids if case not in set(df_res.case_id)]
         else:
             case_id_list = case_ids
@@ -203,10 +210,47 @@ class ToSDR_Retriever(DataRetriever):
             for idx2, point_tag in tqdm(enumerate(point_tag_list), total=len(point_tag_list),leave=False):
                 point_dict = self.scrape_point_info(point_tag, case_id)
                 df = pd.DataFrame([point_dict])
-                if idx1 == 0 and idx2 == 0 and not os.path.isfile("./data_rel/tosdr_all_points.csv"):
+                if idx1 == 0 and idx2 == 0 and not os.path.isfile(points_path):
                     df_res = deepcopy(df)
                 else:
                     df_res = pd.concat([df_res, df], ignore_index = True)
                 sleep(2)
-            df_res.to_csv("./data_rel/tosdr_all_points.csv", index=False)
+            df_res.to_csv(points_path, index=False)
+        return df_res
+
+### DOCUMENTS
+
+    def scrape_doc_info(self, doc_tag, service_id):
+        res_dict = {}
+        res_dict['service_id'] = service_id
+        res_dict['doc_id'] = int(doc_tag.find("a").get("href").split("/")[-1])
+        res_dict['doc_url'] = "".join(['https://edit.tosdr.org',doc_tag.find("a").get("href")])
+        
+        res_dict["doc_type"] = doc_tag.find("a").contents[0]
+        res_dict["doc_content"] = self.gtp.html_unescape(doc_tag.find("div", attrs={"class":"documentContent"}))
+        
+        return res_dict
+
+    def scrape_all_docs(self, service_ids, cookies, headers):
+        docs_path = "".join([os.getcwd(), "/data/saved/tosdr/tosdr_docs.csv"])
+        if os.path.isfile(docs_path):
+            df_res = pd.read_csv(docs_path)
+            service_id_list = [service for service in service_ids if service not in set(df_res.service_id)]
+        else:
+            service_id_list = service_ids
+        
+        for idx1, service_id in tqdm(enumerate(service_id_list), total=len(service_id_list)):
+            service_soup = self.response_to_soup("https://edit.tosdr.org/services/{}/annotate".format(service_id), cookies, headers)
+            doc_tag_list = service_soup.find_all('div', attrs={"class":"panel-default"})
+
+            if len(doc_tag_list) > 0:
+                for idx2, doc_tag in tqdm(enumerate(doc_tag_list), total=len(doc_tag_list),leave=False):
+                    doc_dict = self.scrape_doc_info(doc_tag, service_id)
+                    df = pd.DataFrame([doc_dict])
+                    if idx1 == 0 and idx2 == 0 and not os.path.isfile(docs_path):
+                        df_res = deepcopy(df)
+                    else:
+                        df_res = pd.concat([df_res, df], ignore_index = True)
+                    sleep(2)
+                df_res.to_csv(docs_path, index=False)
         return df_res

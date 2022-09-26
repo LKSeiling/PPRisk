@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./models/fastText/python/fasttext_module"
+    ]
+}
