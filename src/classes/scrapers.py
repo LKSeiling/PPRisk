@@ -1,16 +1,94 @@
-from classes_general import DataRetriever
-
-from tqdm import tqdm
-from copy import deepcopy
-from datetime import datetime
-from time import sleep
-from utils import freeze_dicts
-
-import os
+import re
+import toml
 import requests
 import pandas as pd
 
-class ToSDR_Retriever(DataRetriever):
+from time import sleep
+from tqdm import tqdm
+from copy import deepcopy
+from bs4 import BeautifulSoup
+from datetime import datetime
+
+from classes.text_processors import GeneralTextProcessor, HTML_Cleaner
+from utils import get_all_files, read_file, return_path_to, check_if_file, freeze_dicts, str_to_file
+
+from selenium.webdriver import Firefox
+from selenium.webdriver.common.by import By
+
+
+class DataRetriever:
+
+    def __init__(self) -> None:
+        self.gtp = GeneralTextProcessor()
+        self.cleaner = HTML_Cleaner()
+
+    def response_to_soup(self, url, cookies=None, headers=None):
+        resp = requests.get(url)
+        if cookies and headers:
+            resp = requests.get(url, headers=headers, cookies=cookies)
+        return BeautifulSoup(resp.content, 'html.parser')
+
+    def get_source_soup(self, source_url, cookie_close=False):
+        driver = Firefox()
+        try:
+            driver.get(source_url)
+            if cookie_close:
+                sleep(2)
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "accept")]')
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "allow")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "agree")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "enable")]') 
+                self.find_and_click(driver, '//button[contains(translate(text(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"), "got it")]') 
+                sleep(2)
+            source_soup = BeautifulSoup(driver.page_source, 'html.parser')
+            driver.close()
+            driver.quit()
+            return source_soup
+        except:
+            driver.close()
+            driver.quit()
+            return False
+        
+    def find_and_click(self, driver, xpath):
+        try:
+            element = driver.find_element(By.XPATH,xpath)
+            element.click()
+        except Exception as e:
+            pass
+
+    def tidy_text_row(self,input_df) -> pd.DataFrame:
+        red_df = self.remove_empty_rows(input_df)
+        red_df.loc[:,"text"] = red_df.loc[:,"text"].apply(self.gtp.clean_input)
+        return red_df
+
+    def get_body_from_url(self, url, cookie_close) -> str:
+        source_soup = self.get_source_soup(url, cookie_close=cookie_close)
+        return str(source_soup.find("body"))
+        
+
+    # reformulate for general body extraction
+    def scrape_and_save_documents(self, document_df, save_path, sanitize=False) -> None: 
+        problem_urls = []  
+        for idx, row in tqdm(document_df.iterrows(), total=len(document_df)):
+            filename = "{}/{}_{}.html".format(save_path,row.docUID, row.service)
+            url = "".join(["https://www.",row.docURL])
+            try:
+                body_str = self.get_body_from_url(url, cookie_close=True)
+                if sanitize:
+                    body_str = self.cleaner.html_to_sanitized(body_str)
+                str_to_file(body_str, filename)
+            except:
+                problem_urls.append(url)
+        if len(problem_urls) > 0:
+            print("\nIssues occured while trying to scrape the following URLs:")
+            for url in problem_urls:
+                print(url)
+            print("\nPlease check manually.")
+                
+
+
+
+class ToSDRRetriever(DataRetriever):
 
     def __init__(self) -> None:
         super().__init__()
@@ -157,7 +235,7 @@ class ToSDR_Retriever(DataRetriever):
         return res_dict
 
     def add_point_content(self,point_dict, point_soup):
-        text_info = point_soup.find_all('div', attrs={"class":"col-sm-10 col-sm-offset-1 p30 bgw"})
+        text_info = point_soup.findl('div', attrs={"class":"col-sm-10 col-sm-offset-1 p30 bgw"})
 
         point_dict["point_text"] = ""
         point_dict["doc_id"] = ""
@@ -165,18 +243,32 @@ class ToSDR_Retriever(DataRetriever):
 
         if len(text_info) != 0:
             if len(text_info[0].find_all("blockquote")) != 0:
-                point_dict["point_text"] = self.gtp.replace_html_tags(text_info[0].find("blockquote").contents[0].strip())
                 point_dict["doc_id"] = text_info[0].find("blockquote").a.get("href").split('#')[-1]
                 point_dict["doc_type"] = text_info[0].find("blockquote").a.contents[0]
+                point_dict["point_text"] = self.extract_point_text(text_info)
+
             elif len(text_info[0].contents[0].strip()) != 0:
                 point_dict["point_text"] = text_info[0].contents[0].strip()
-        
+
         return point_dict
+
+    def extract_point_text(self, text_info):
+        text = ""
+        for bq in text_info.find_all("blockquote"):
+            for f in bq.find_all(["footer","span"]):
+                f.decompose()
+            for t in bq.find_all(string=True):
+                if t.strip() != "":
+                    text = "".join([text,t.strip()])
+        text = text.replace("&nbsp;", " ")
+        text = text.replace("\n", " ")
+        return text
+
 
     def add_point_info(self,point_dict, point_soup):
         point_details = point_soup.find_all('div', attrs={"class":"col-sm-2"})
         
-        point_dict['service_id'] = point_details[0].a.get("href").split('/')[-1]
+        point_dict['service'] = point_details[0].a.contents[0]
         point_dict['point_status'] = point_details[1].find_all("span")[-1].contents[0].strip()
         point_dict['point_source'] = point_details[4].a.get("href")
 
@@ -195,10 +287,9 @@ class ToSDR_Retriever(DataRetriever):
         
         return res_dict
 
-
     def scrape_all_points(self,case_ids):
-        points_path = "".join([os.getcwd(), "/data/saved/tosdr/tosdr_points.csv"])
-        if os.path.isfile(points_path):
+        points_path = return_path_to("/data/saved/tosdr/tosdr_points.csv")
+        if check_if_file(points_path):
             df_res = pd.read_csv(points_path)
             case_id_list = [case for case in case_ids if case not in set(df_res.case_id)]
         else:
@@ -210,7 +301,7 @@ class ToSDR_Retriever(DataRetriever):
             for idx2, point_tag in tqdm(enumerate(point_tag_list), total=len(point_tag_list),leave=False):
                 point_dict = self.scrape_point_info(point_tag, case_id)
                 df = pd.DataFrame([point_dict])
-                if idx1 == 0 and idx2 == 0 and not os.path.isfile(points_path):
+                if idx1 == 0 and idx2 == 0 and not check_if_file(points_path):
                     df_res = deepcopy(df)
                 else:
                     df_res = pd.concat([df_res, df], ignore_index = True)
@@ -232,8 +323,8 @@ class ToSDR_Retriever(DataRetriever):
         return res_dict
 
     def scrape_all_docs(self, service_ids, cookies, headers):
-        docs_path = "".join([os.getcwd(), "/data/saved/tosdr/tosdr_docs.csv"])
-        if os.path.isfile(docs_path):
+        docs_path = return_path_to("/data/saved/tosdr/tosdr_docs.csv")
+        if check_if_file(docs_path):
             df_res = pd.read_csv(docs_path)
             service_id_list = [service for service in service_ids if service not in set(df_res.service_id)]
         else:
@@ -247,10 +338,87 @@ class ToSDR_Retriever(DataRetriever):
                 for idx2, doc_tag in tqdm(enumerate(doc_tag_list), total=len(doc_tag_list),leave=False):
                     doc_dict = self.scrape_doc_info(doc_tag, service_id)
                     df = pd.DataFrame([doc_dict])
-                    if idx1 == 0 and idx2 == 0 and not os.path.isfile(docs_path):
+                    if idx1 == 0 and idx2 == 0 and not check_if_file(docs_path):
                         df_res = deepcopy(df)
                     else:
                         df_res = pd.concat([df_res, df], ignore_index = True)
                     sleep(2)
                 df_res.to_csv(docs_path, index=False)
         return df_res
+
+
+
+class PrivSpyRetriever(DataRetriever):
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def remove_md_links(self,input_str) -> str:
+        re_detect = r'\[([\d\w\s]*)\]\(http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+\)'
+        return re.sub(re_detect,r'\1', input_str)
+
+    def clean_toml_multiline(self,data_str) -> str:
+        # identify """-sections
+        split_list = data_str.split('"""')
+        split_list = [elem.strip() for elem in split_list]
+        if len(split_list) == 1:
+            return split_list[0]
+        else:
+            # replace \n within """ """-blocks with \\n\\n
+            output_content = []
+            for idx, elem in enumerate(split_list):
+                if idx%2!=0:
+                    elem = elem.replace("\n","\\n")
+                    elem = elem.replace('"',"'")
+                output_content.append(elem)
+            return '"'.join(output_content)
+
+    def clean_toml(self,input_str) -> str:
+        output_str = self.remove_md_links(input_str)
+        output_str = self.clean_toml_multiline(output_str)
+        return output_str
+
+    def toml_to_df(self, toml_dict) -> pd.DataFrame:
+        text_df = self.extract_quote_info(toml_dict['rubric'])
+        text_df.insert(0, "sources", ", ".join(toml_dict['sources']))
+        text_df.insert(0, "service_name", toml_dict['name'])
+        return text_df
+
+    def extract_quote_info(self, rubric_dict) -> pd.DataFrame:
+        res_df = pd.DataFrame(columns=["text","tag","value","tagval","notes", "lang", "prec"])
+        for tag, val in rubric_dict.items():
+            if 'citations' in val:
+                value = val['value']
+                tagval = "-".join([tag, value])
+                notes = " ".join(val['notes']) if "notes" in val else ""   
+                for quote in val['citations']:
+                    lang, prec = self.gtp.guess_language(quote)
+                    new_row = pd.DataFrame.from_dict({'text':[quote],'tag':[tag],'value':[value], 'tagval':[tagval],'notes':[notes],
+                            "lang":[lang], "prec":[prec]})
+                    res_df = pd.concat([res_df, new_row], ignore_index = True)
+        return res_df
+
+    def extract_point_info_from_products(self, source_path):
+        res_df = pd.DataFrame(columns=["service_name", "sources", "text","tag","value","tagval","notes", "lang", "prec"])
+        product_list = get_all_files(source_path)
+        for product in tqdm(product_list):
+            if ".toml" in product:
+                product_path = "".join([source_path, product])
+                toml_str = self.clean_toml(read_file(product_path))
+                toml_dict = toml.loads(toml_str)
+                if "rubric" in toml_dict.keys():
+                    temp_df = self.toml_to_df(toml_dict)
+                    res_df = pd.concat([res_df, temp_df], ignore_index = True)
+        return res_df
+
+    def split_sources(self, sources_list):
+        all_sources = []
+        for elem in sources_list:
+            split_elem = elem.split(", ")
+            if len(split_elem) == 1:
+                all_sources.append(split_elem[0])
+            else:
+                for sub_elem in split_elem:
+                    all_sources.append(sub_elem)
+        all_sources = ["".join(["https://www.",source]) if "http" not in source else source for source in all_sources]
+        return all_sources

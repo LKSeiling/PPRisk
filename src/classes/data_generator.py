@@ -1,4 +1,4 @@
-from classes_general import DataRetriever
+from classes.scrapers import DataRetriever
 from utils import read_file, flatten
 
 import pandas as pd
@@ -180,6 +180,6 @@ class OPP_Retriever(DataRetriever):
             clean_df.to_csv(clean_path, index=False, sep="\t")
 
 
-### SEGEMNT LEVEL
+### SEGMENT LEVEL
     def return_segment_level_data(self, policy_id, method=""):
         pass
